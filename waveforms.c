@@ -17,12 +17,12 @@ void print_sampling_info() {
 }
 
 // Writes a sine wave to the input buffer in PCM interleaved format
-void sine_oscillator(unsigned char *buffer, OscillatorInput params) {
+void sine_oscillator(unsigned char *buffer, OscillatorInput params, double* input_phase) {
     double phase, phase_step, period_length;
     int output;
     char lsb, msb;
 
-    phase = 0.;
+    phase = *input_phase;
     period_length = 2. * M_PI;
     phase_step = M_PI * params.frequency / (params.sample_rate / 2.);
 
@@ -42,6 +42,7 @@ void sine_oscillator(unsigned char *buffer, OscillatorInput params) {
         if (phase >= period_length)
             phase -= period_length;
     }
+    *input_phase = phase;
 }
 
 
@@ -67,30 +68,32 @@ void* sound_loop(void *args){
     SoundLoopArgs *input_args = (SoundLoopArgs*)args;
     OscillatorInput wave_data; 
     SoundData data;
-    double full_gain, gain_step;
+    double phase, full_gain, gain_step;
     unsigned char *result, *frames;
     int count, err, sweep;
 
+    phase     = 0.;
     sweep     = input_args->sweep_on;
     wave_data = input_args->wave_data;
     data      = input_args->sound_data;
     full_gain = wave_data.gain;
 
+    wave_data.gain = 0;
     gain_step = full_gain / 10.;
 
     result = malloc(sizeof(unsigned char) * data.config->bufferSize);
 
     for (int i = 0; i < input_args->repeats; ++i) {
 
-        // Fade in/out
-        // if (i < 10) {
-        //     wave_data.gain += gain_step;
-        // } else if (i >= 40) {
-        //     wave_data.gain -= gain_step;
-        // }
+        //Fade in/out
+        if (i < input_args->repeats - (input_args->repeats - 5)) {
+            wave_data.gain += gain_step;
+        } else if (i >= input_args->repeats - 5) {
+            wave_data.gain -= gain_step;
+        }
 
 
-        sine_oscillator(result, wave_data);
+        sine_oscillator(result, wave_data, &phase);
         frames = result;
         count  = data.config->periodSize;
         while (count > 0) {
@@ -164,12 +167,12 @@ void* wav_loop(void *args){
 
 
 int main(int argc, char **argv) {
-    OscillatorInput wave_data, wave_data2;
+    OscillatorInput wave_data, wave_data2, wave_data3;
     unsigned char *result, *result2;
-	unsigned char *frames;
-	int err, count, format_bits, bytes_per_sample, sweep;
-    SoundData data, data2;
-    SoundConfig config, config2;
+    unsigned char *frames;
+    int err, count, format_bits, bytes_per_sample, sweep;
+    SoundData data, data2, data3;
+    SoundConfig config, config2, config3;
     unsigned int max_val;
     
     if (argc != 4) {
@@ -177,7 +180,7 @@ int main(int argc, char **argv) {
         exit(EXIT_FAILURE);
     }
 
- 	format_bits = snd_pcm_format_width(SND_PCM_FORMAT_S16_LE);
+ 	format_bits = snd_pcm_format_width(SND_PCM_FORMAT_S16);
  	max_val = (1 << (format_bits - 1)) - 1;
  	bytes_per_sample = format_bits / 8;  
 
@@ -186,23 +189,28 @@ int main(int argc, char **argv) {
 
     data2.config = &config2;
     initPCMPlayback(&data2);
-    
-    wave_data = (OscillatorInput){.num_frames=data.config->periodSize, .frequency=440., 
-                                  .gain=0.5, .sample_rate=44100.0, .velocity=80, .max_val=max_val};
+ 
+    data3.config = &config3;
+    initPCMPlayback(&data3);   
+
+    wave_data = (OscillatorInput){.num_frames=data.config->periodSize, .frequency=atof(argv[1]), .gain=0.3, .sample_rate=44100.0, .velocity=80, .max_val=max_val};
 
 
-    wave_data2 = (OscillatorInput){.num_frames=data2.config->periodSize, .frequency=220., 
-                                  .gain=0.5, .sample_rate=44100.0, .velocity=80, .max_val=max_val};
+    wave_data2 = (OscillatorInput){.num_frames=data2.config->periodSize, .frequency=atof(argv[2]), .gain=0.3, .sample_rate=44100.0, .velocity=80, .max_val=max_val};
 
+    wave_data3 = (OscillatorInput){.num_frames=data2.config->periodSize, .frequency=atof(argv[3]), .gain=0.3, .sample_rate=44100.0, .velocity=80, .max_val=max_val};
 
     SoundLoopArgs args1 = { wave_data, data, 0, 100};
     SoundLoopArgs args2 = { wave_data2, data2, 0, 100};
+    SoundLoopArgs args3 = { wave_data3, data3, 0, 100};
 
-    pthread_t id1, id2; 
+    pthread_t id1, id2, id3;
     pthread_create(&id1, NULL, (void*)sound_loop, (void*)&args1);
     pthread_create(&id2, NULL, (void*)sound_loop, (void*)&args2);
-    pthread_join(id2, NULL);
+    pthread_create(&id3, NULL, (void*)sound_loop, (void*)&args3);
     pthread_join(id1, NULL);
+    pthread_join(id2, NULL);
+    pthread_join(id3, NULL);
 
 	free(data2.areas);
 	free(data2.samples);

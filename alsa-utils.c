@@ -15,6 +15,7 @@
 #include "include/alsa-config.h"
 #include "include/alsa-utils.h"
 
+ 
 static snd_output_t *output = NULL;
 static unsigned int bufferTime  = BUFFER_TIME;
 static unsigned int periodTime  = PERIOD_TIME;
